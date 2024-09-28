@@ -1,0 +1,13 @@
+[project]
+name = "flowall"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "dash-mantine-components>=0.14.4",
+    "dash-snap-grid>=0.1.0",
+    "dash>=2.18.1",
+    "flowfunc>=0.1.1",
+    "pillow>=10.4.0",
+]
