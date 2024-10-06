@@ -7,7 +7,7 @@ from flowfunc.config import Config
 from flowfunc.jobrunner import JobRunner
 from flowfunc.models import OutNode
 from flowfunc.types import color
-from PIL import Image
+from PIL import Image, ImageDraw
 import base64
 from io import BytesIO
 
@@ -15,15 +15,25 @@ app = Dash(__name__)
 
 SCALE_FACTOR = 4
 
+def hex_to_rgb(hex_color: str) -> tuple:
+    """
+    Convert a hex color string to an RGB tuple.
+
+    :param hex_color: A string representing a hex color (e.g., "#RRGGBB" or "RRGGBB").
+    :return: A tuple (R, G, B) representing the RGB color.
+    """
+    hex_color = hex_color.lstrip("#")
+    return tuple(int(hex_color[i : i + 2], 16) for i in (0, 2, 4))
+
 
 def create_canvas(width: int, height: int, background_color: color) -> Image.Image:
     """Create an empty canvas with the given height and width."""
     return Image.new(
-        "RGB", (width * SCALE_FACTOR, height * SCALE_FACTOR), background_color
+        "RGBA", (width * SCALE_FACTOR, height * SCALE_FACTOR), background_color
     )
 
 
-def save_image(image: Image.Image) -> html.Img:
+def preview_image(image: Image.Image) -> html.Img:
     """Display image"""
     image = image.resize(
         (image.width // SCALE_FACTOR, image.height // SCALE_FACTOR),
@@ -36,8 +46,88 @@ def save_image(image: Image.Image) -> html.Img:
         style={"max-width": "100%", "max-height": "100%"},
     )
 
+def circle(radius: int, color: color, opacity: int) -> Image.Image:
+    """Draw a circle on the image with the given opacity."""
+    radius = radius * SCALE_FACTOR
 
-config = Config.from_function_list([create_canvas, save_image])
+    image = Image.new("RGBA", (2 * radius, 2 * radius), (255, 255, 255, 0))
+
+    draw = ImageDraw.Draw(image)
+    # Set the color with the given opacity
+    color_with_opacity = (*hex_to_rgb(color)[:3], opacity)
+    draw.ellipse((0, 0, 2 * radius, 2 * radius), fill=color_with_opacity)
+    return image
+
+
+def rectangular_pattern(
+    image: Image.Image, count_x: int, count_y: int, step_x: int, step_y: int
+) -> Image.Image:
+    """Repeat the image in a rectangular pattern, overlaying on top of existing pixels."""
+    step_x = step_x * SCALE_FACTOR
+    step_y = step_y * SCALE_FACTOR
+    width, height = image.size
+    new_width = count_x * step_x
+    new_height = count_y * step_y
+    if step_x < width:
+        new_width += width - step_x
+    if step_y < height:
+        new_height += height - step_y
+    new_image = Image.new("RGBA", (new_width, new_height), (255, 255, 255, 0))
+    for x in range(0, count_x):
+        for y in range(0, count_y):
+            new_image.alpha_composite(image, (x * step_x, y * step_y))
+    return new_image
+
+
+def overlay_images(
+    base_image: Image.Image,
+    overlay_image: Image.Image,
+    offset_x: int,
+    offset_y: int,
+    transparency: int,
+) -> Image.Image:
+    """
+    Overlay an image on top of another image with the given position and transparency.
+    """
+    # Ensure the overlay image has an alpha channel
+    position = (offset_x * SCALE_FACTOR, offset_y * SCALE_FACTOR)
+    if overlay_image.mode != "RGBA":
+        overlay_image = overlay_image.convert("RGBA")
+
+    # Apply transparency to the overlay image
+    if transparency < 255:
+        overlay_image = overlay_image.copy()
+        alpha = overlay_image.split()[3]
+        alpha = Image.eval(alpha, lambda a: int(a * (transparency / 255)))
+        overlay_image.putalpha(alpha)
+
+    # Calculate the region of the overlay image that fits within the base image
+    base_width, base_height = base_image.size
+    overlay_width, overlay_height = overlay_image.size
+    x, y = position
+
+    # Determine the region of the overlay image that is within the base image bounds
+    if x < 0:
+        overlay_image = overlay_image.crop((-x, 0, overlay_width, overlay_height))
+        x = 0
+    if y < 0:
+        overlay_image = overlay_image.crop((0, -y, overlay_width, overlay_height))
+        y = 0
+    if x + overlay_width > base_width:
+        overlay_image = overlay_image.crop((0, 0, base_width - x, overlay_height))
+    if y + overlay_height > base_height:
+        overlay_image = overlay_image.crop((0, 0, overlay_width, base_height - y))
+
+    # Create a new image with the same size as the base image and an alpha channel
+    combined_image = base_image.convert("RGBA")
+    combined_image.paste(overlay_image, (x, y), overlay_image)
+
+    return combined_image
+
+
+config = Config.from_function_list(
+    [create_canvas, preview_image, circle, rectangular_pattern, overlay_images]
+)
 job_runner = JobRunner(config)
 
 
@@ -47,14 +137,12 @@ app.layout = dmc.MantineProvider(
             Flowfunc(
                 id="flowfunc",
                 config=config.dict(),
-                style={"width": "100%", "height": "100vh"},
             ),
             html.Div(
                 id="buttons",
                 children=[
                     dmc.Button("Run", id="run-button"),
                 ],
-                style={"position": "absolute", "top": "10px", "left": "10px"},
             ),
             html.Div(
                 Grid(
@@ -62,8 +150,9 @@ app.layout = dmc.MantineProvider(
                     cols=24,
                     rowHeight=50,
                     layout=[
-                        {"i": "output", "x": 10, "y": 10, "w": 2, "h": 2},
+                        {"i": "output", "x": 22, "y": 0, "w": 2, "h": 2},
                     ],
+                    resizeHandles=["nw", "ne", "sw", "se"],
                     children=[
                         html.Div(
                             id="output",
@@ -73,7 +162,7 @@ app.layout = dmc.MantineProvider(
                 id="grid-container",
             ),
         ],
-        style={"width": "100%", "height": "100vh"},
+        id="app",
     )
 )
 
@@ -88,14 +177,15 @@ def run_job(n_clicks, nodes):
     if n_clicks is None or not nodes:
         return no_update, no_update
     outnodes = job_runner.run(nodes)
-    print(outnodes)
     if not outnodes:
         return no_update, [{"id": node["id"], "status": "error"} for node in nodes]
     nodes_status = {}
     children = []
     for id, outnode in outnodes.items():
         nodes_status[id] = outnode.status
-        if outnode.type == "__main__.save_image":
+        if outnode.status == "failed":
+            print(outnode.error)
+        if outnode.type == "__main__.preview_image":
             children.append(outnode.result)
     return children, nodes_status
 

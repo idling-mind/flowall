@@ -5,6 +5,13 @@
 #output {
     background-color: white;
     height: 100%;
+    padding: 10px;
+        display: flex;
+        /* Enable flexbox */
+        justify-content: center;
+        /* Center horizontally */
+        align-items: center;
+        /* Center vertically */
 }
 
 #grid-container {
@@ -15,4 +22,14 @@
     height: 100%;
     pointer-events: none;
     overflow: hidden;
+}
+#app {
+    height: 100vh;
+    width: 100%;
+}
+
+#buttons {
+    position: absolute;
+    top: 10px;
+    left: 10px;
 }
