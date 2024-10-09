@@ -58,6 +58,19 @@ def circle(radius: int, color: color, opacity: int) -> Image.Image:
     draw.ellipse((0, 0, 2 * radius, 2 * radius), fill=color_with_opacity)
     return image
 
+def rectangle(width: int, height: int, color: color, opacity: int) -> Image.Image:
+    """Draw a rectangle on the image with the given opacity."""
+    width = width * SCALE_FACTOR
+    height = height * SCALE_FACTOR
+
+    image = Image.new("RGBA", (width, height), (255, 255, 255, 0))
+
+    draw = ImageDraw.Draw(image)
+    # Set the color with the given opacity
+    color_with_opacity = (*hex_to_rgb(color)[:3], opacity)
+    draw.rectangle((0, 0, width, height), fill=color_with_opacity)
+    return image
+
 
 def rectangular_pattern(
     image: Image.Image, count_x: int, count_y: int, step_x: int, step_y: int
@@ -124,9 +137,21 @@ def overlay_images(
 
     return combined_image
 
+def rotate(image: Image.Image, angle: int) -> Image.Image:
+    """Rotate the image by the given angle."""
+    return image.rotate(angle, expand=True)
+
 
 config = Config.from_function_list(
-    [create_canvas, preview_image, circle, rectangular_pattern, overlay_images]
+    [
+        create_canvas,
+        preview_image,
+        circle,
+        rectangular_pattern,
+        overlay_images,
+        rectangle,
+        rotate,
+    ]
 )
 job_runner = JobRunner(config)
 
