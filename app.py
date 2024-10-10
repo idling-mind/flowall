@@ -1,5 +1,4 @@
-from dash import Dash, Input, Output, dcc, html, State, no_update
-from dash.development.base_component import Component
+from dash import Dash, Input, Output, dcc, html, State, no_update, callback_context
 import dash_mantine_components as dmc
 from dash_snap_grid import Grid
 from flowfunc import Flowfunc
@@ -47,14 +46,14 @@ def preview_image(image: Image.Image) -> html.Img:
         style={"max-width": "100%", "max-height": "100%"},
     )
 
-def circle(radius: int, color: color, opacity: int) -> Image.Image:
+def circle(radius: int, color: color, transparency: int) -> Image.Image:
     """Draw a circle on the image with the given opacity."""
     radius = radius * SCALE_FACTOR
 
     image = Image.new("RGBA", (2 * radius, 2 * radius), (255, 255, 255, 0))
 
     draw = ImageDraw.Draw(image)
-    # Set the color with the given opacity
+    opacity = int(255 - 255 * (transparency / 100))
     color_with_opacity = (*hex_to_rgb(color)[:3], opacity)
     draw.ellipse((0, 0, 2 * radius, 2 * radius), fill=color_with_opacity)
     return image
@@ -85,8 +84,20 @@ def change_color(image: Image.Image, color: color) -> Image.Image:
     image.putdata(new_data)
     return image
 
+def change_transparency(image: Image.Image, transparency: int) -> Image.Image:
+    """Change the transparency of the image."""
+    if image.mode != "RGBA":
+        image = image.convert("RGBA")
+    data = image.getdata()
+    new_data = []
+    opacity = int(255 - 255 * (transparency / 100))
+    for item in data:
+        new_data.append((*item[:3], int(item[3] * opacity)))
+    image.putdata(new_data)
+    return image
 
-def rectangle(width: int, height: int, color: color, opacity: int) -> Image.Image:
+
+def rectangle(width: int, height: int, color: color, transparency: int) -> Image.Image:
     """Draw a rectangle on the image with the given opacity."""
     width = width * SCALE_FACTOR
     height = height * SCALE_FACTOR
@@ -94,7 +105,7 @@ def rectangle(width: int, height: int, color: color, opacity: int) -> Image.Imag
     image = Image.new("RGBA", (width, height), (255, 255, 255, 0))
 
     draw = ImageDraw.Draw(image)
-    # Set the color with the given opacity
+    opacity = int(255 - 255 * (transparency / 100))
     color_with_opacity = (*hex_to_rgb(color)[:3], opacity)
     draw.rectangle((0, 0, width, height), fill=color_with_opacity)
     return image
@@ -181,6 +192,7 @@ config = Config.from_function_list(
         rotate,
         shape_from_url,
         change_color,
+        change_transparency,
     ]
 )
 job_runner = JobRunner(config)
@@ -196,7 +208,15 @@ app.layout = dmc.MantineProvider(
             html.Div(
                 id="buttons",
                 children=[
-                    dmc.Button("Run", id="run-button"),
+                    dmc.ButtonGroup(
+                        [
+                            dmc.Button("Run", id="run-button"),
+                            dmc.Button("Save", id="save-button"),
+                            dcc.Store(id="save-store", storage_type="local"),
+                            dmc.Button("Restore", id="restore-button"),
+                            dmc.Button("Clear", id="clear-button"),
+                        ]
+                    )
                 ],
             ),
             html.Div(
@@ -243,6 +263,37 @@ def run_job(n_clicks, nodes):
         if outnode.type == "__main__.preview_image":
             children.append(outnode.result)
     return children, nodes_status
+
+@app.callback(
+    Output("save-store", "data"),
+    Input("save-button", "n_clicks"),
+    State("flowfunc", "nodes"),
+)
+def save_image(n_clicks, nodes):
+    if n_clicks is None or not nodes:
+        return no_update
+    return nodes
+
+
+@app.callback(
+    Output("flowfunc", "nodes"),
+    Output("flowfunc", "editor_status"),
+    Input("restore-button", "n_clicks"),
+    Input("clear-button", "n_clicks"),
+    State("save-store", "data"),
+    State("flowfunc", "nodes"),
+)
+def restore_image(n_clicks_restore, n_clicks_clear, store_data, nodes):
+    if not callback_context.triggered:
+        return nodes, "server"
+    control = callback_context.triggered_id
+    if control == "restore-button":
+        if store_data:
+            return store_data, "server"
+        return no_update, no_update
+    elif control == "clear-button":
+        return {}, "server"
+    return nodes, "server"
 
 
 if __name__ == "__main__":
