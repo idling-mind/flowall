@@ -10,6 +10,7 @@ from flowfunc.types import color
 from PIL import Image, ImageDraw
 import base64
 from io import BytesIO
+import requests
 
 app = Dash(__name__)
 
@@ -57,6 +58,33 @@ def circle(radius: int, color: color, opacity: int) -> Image.Image:
     color_with_opacity = (*hex_to_rgb(color)[:3], opacity)
     draw.ellipse((0, 0, 2 * radius, 2 * radius), fill=color_with_opacity)
     return image
+
+def shape_from_url(url: str, height: int, width: int) -> Image.Image:
+    """Create an image from a URL."""
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3"
+    }
+    response = requests.get(url, headers=headers)
+    response.raise_for_status()
+    image = Image.open(BytesIO(response.content))
+    return image.resize((width * SCALE_FACTOR, height * SCALE_FACTOR))
+
+
+def change_color(image: Image.Image, color: color) -> Image.Image:
+    """Change the color of the image."""
+    if image.mode != "RGBA":
+        image = image.convert("RGBA")
+    data = image.getdata()
+    new_data = []
+    for item in data:
+        # if the pixel is transparent, keep it transparent
+        if item[3] == 0:
+            new_data.append(item)
+        else:
+            new_data.append(hex_to_rgb(color) + (item[3],))
+    image.putdata(new_data)
+    return image
+
 
 def rectangle(width: int, height: int, color: color, opacity: int) -> Image.Image:
     """Draw a rectangle on the image with the given opacity."""
@@ -151,6 +179,8 @@ config = Config.from_function_list(
         overlay_images,
         rectangle,
         rotate,
+        shape_from_url,
+        change_color,
     ]
 )
 job_runner = JobRunner(config)

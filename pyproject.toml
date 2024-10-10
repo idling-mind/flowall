@@ -10,4 +10,6 @@ dependencies = [
     "dash>=2.18.1",
     "flowfunc>=0.1.1",
     "pillow>=10.4.0",
+    "requests>=2.32.3",
+    "svglib>=1.5.1",
 ]
